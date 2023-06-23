@@ -1,0 +1,99 @@
+# Global Settings
+global:
+  imagepullsecret: <image_pull_secret_name> 
+
+# Deployment Replica Count
+replicaCount: 1
+
+# Application Name and namespace to deploy
+namespace: default
+appname: sampleApplication
+
+# Docker Containers
+image:
+  repository: shydrate/demo
+  tag: v1
+  pullPolicy: Always
+
+# Container proxy and port mapping for the service
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+env:
+  # Configuration Setting for the service
+  configmap:
+    # example
+    # ZIPKIN_ENDPOINT: xyz.svc.cluster.local
+    ENVIRONMENT: dev
+
+  # Secret attached to the service
+  secret:
+    # example
+    # DB_URI: <base64_encoded_string>
+    USERNAME: cm9vdAo=
+    PASSWORD: cGFzcwo=
+
+
+# Service Resources Management:
+resources:
+  limits:
+    cpu: 200m
+    memory: 400Mi
+  requests:
+    cpu: 50m
+    memory: 100Mi
+
+# Label for the node to deploy
+nodeSelector: {}
+
+# Tolerations for the taints for the kubernetes
+tolerations: []
+
+# Kubernetes Affinity for the deployment and pods
+affinity: {}
+
+# Autoscaling for the service
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+
+# Health Checks for the service
+livenessProbe: 
+  enabled: true
+  path: "/q/health/live"
+  port : 8080
+
+readinessProbe:
+  enabled: false
+  path: "/q/health/ready"
+  port: 8080
+
+# Service account for the AWS resources permission
+serviceAccount:
+  enabled: false
+  iamRole: <AWS IAM_Role ARN>
+
+# External secrets for the aws resource secret manager. It will refer to values of aws secret manager demo
+externalSecret:
+  enabled: false
+  name: demo
+
+ingress:
+    enabled: true
+    # Ingress Annotations
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/rewrite-target: /
+      nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    # Ingress Class
+    ingressClass: nginx
+    # Ingress host
+    host: domain.com
+    # Ingress path
+    path: /
+    # Ingress Path type
+    pathType: Prefix

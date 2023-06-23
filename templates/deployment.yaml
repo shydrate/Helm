@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appname }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.appname }}
+    app.kubernetes.io/instance: {{ .Values.appname }}
+  namespace: {{ .Values.namespace }}
+  annotations: 
+    app.kubernetes.io/managed-by: "Helm"
+    meta.helm.sh/release-namespace: {{ .Values.namespace }}
+    meta.helm.sh/release-name: {{ .Values.appname }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.appname }}
+      app.kubernetes.io/instance: {{ .Values.appname }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.appname }}
+        app.kubernetes.io/instance: {{ .Values.appname }}
+    spec:
+      imagePullSecrets: 
+        - name: {{.Values.global.imagepullsecret }}
+      automountServiceAccountToken: false
+      securityContext:
+        # runAsUser: 1000   # we make sure this is greater than 999 and
+        # runAsGroup: 3000  # This value is greater than 999
+        # fsGroup: 1000
+        # fsGroupChangePolicy: "OnRootMismatch"
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ .Values.appname }}
+          env:
+            {{- $configMapName := .Values.appname -}}
+            {{- range $key, $value := .Values.env.configmap }}
+            - name: {{ $key }}
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $configMapName }}
+                  key: {{ $key }}
+            {{- end }}
+            {{- $secretName := .Values.appname -}}
+            {{- range $key, $value :=  .Values.env.secret }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $key }}
+            {{- end }}   
+          envFrom:
+          - secretRef:
+              name: {{ .Values.externalSecret.name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          securityContext:
+            # runAsUser: 2000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false # this field should be set to false explicitly
+            # capabilities:
+            #   add:
+            #     - SYS_TIME
+            #     - AUDIT_READ
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+        {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path }}
+              port: {{ .Values.livenessProbe.port }}
+        {{- end}}
+
+        {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path }}
+              port: {{ .Values.readinessProbe.port }}
+            initialDelaySeconds: 120
+        {{- end}}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
