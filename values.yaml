@@ -64,12 +64,12 @@ autoscaling:
 # Health Checks for the service
 livenessProbe: 
   enabled: true
-  path: "/q/health/live"
+  path: "" # add paths like /q/health/live or something similar.Else write api for liveness
   port : 8080
 
 readinessProbe:
   enabled: false
-  path: "/q/health/ready"
+  path: "" # add paths like /q/health/ready or something similar.Else write api for readiness
   port: 8080
 
 # Service account for the AWS resources permission
@@ -77,10 +77,37 @@ serviceAccount:
   enabled: false
   iamRole: <AWS IAM_Role ARN>
 
+#StorageClass creation.
+storageClass:
+  enabled: false
+  type: gp3
+  provisioner: kubernetes.io/aws-ebs
+  allowVolumeExpansion: true
+  reclaimPolicy: Retain
+  volumeBindingMode: WaitForFirstConsumer
+
+#VolumeClaim creation.
+volumeClaim:
+  enabled: false #If storageClass is enabled, enable this also, else keep both as default
+  resources:
+    requests:
+      storage: 10Gi
+      
 # External secrets for the aws resource secret manager. It will refer to values of aws secret manager demo
 externalSecret:
   enabled: false
   name: demo
+
+#SecretStore, note: You have to create this only once, and use externalsecrets for different secretmanagers.
+secretStrore:
+  enabled: false
+  name: demo-secretstore
+  aws:
+    service: SecretsManager
+    region: ap-south-1
+    auth: secrets-readonly
+    access_key: access_key
+    secret_key: secret
 
 ingress:
     enabled: true
