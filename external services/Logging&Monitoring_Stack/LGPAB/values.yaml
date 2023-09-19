@@ -13,10 +13,6 @@ grafana:
     limits:
       memory: 150Mi
       cpu: "250m"
-  dns:
-    fqdn: dev.ap-south-1.metaecho.com
-    host: grafana
-    ttl: 300
 
 loki:
   image: grafana/loki:2.4.1
@@ -60,10 +56,6 @@ eventrouter:
 prometheus:
   image: prom/prometheus:v2.30.1
   serviceAccount: prometheus-sa
-  dns:
-    fqdn: dev.ap-south-1.metaecho.com
-    host: prometheus
-    ttl: 300
   storage:
     size: 10Gi
   resources:
@@ -81,16 +73,7 @@ alertmanager:
   image: prom/alertmanager:v0.23.0
   alertsEnabled: false
   runbookUrl: "https://github.com/echo-india/echo-auto/blob/master/docs/alerts.md"
-  dns:
-    fqdn: dev.ap-south-1.metaecho.com
-    host: alertmanager
-    ttl: 300
-  pagerduty:
-    key: "REPLACEME"
-  slackEchoABQ:
-    channel: ""
-    apiURL: ""
-  slackEchoIndia:
+  slackDemo:
     channel: ""
     apiURL: ""
   resources:
