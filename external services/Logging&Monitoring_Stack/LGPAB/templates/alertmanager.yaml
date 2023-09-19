@@ -1,0 +1,109 @@
+{{- if .Values.alertmanager.alertsEnabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: alertmanager
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+  - name: alertmanager
+    port: 9093
+    protocol: TCP
+    targetPort: http-api
+  selector:
+    app: alertmanager
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-lb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: alertmanager
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+  - name: alertmanager
+    port: 80
+    protocol: TCP
+    targetPort: http-api
+    nodePort: 30080
+  selector:
+    app: alertmanager
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/alertmanager-cm.yaml") . | sha256sum }}
+      labels:
+        app: alertmanager
+    spec:
+      priorityClassName: lpg
+      containers:
+      - name: prometheus
+        image: {{ .Values.alertmanager.image }}
+        args:
+        - --config.file=/etc/alertmanager/alertmanager.yaml
+        ports:
+        - name: http-api
+          containerPort: 9093
+          protocol: TCP
+        resources:
+          requests:
+            memory: {{ .Values.alertmanager.resources.requests.memory }}
+            cpu: {{ .Values.alertmanager.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.alertmanager.resources.limits.memory }}
+            cpu: {{ .Values.alertmanager.resources.limits.cpu }}
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /#/status
+            port: http-api
+            scheme: HTTP
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /#/status
+            port: http-api
+            scheme: HTTP
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        volumeMounts:
+        - name: alertmanager-config
+          mountPath: /etc/alertmanager
+      volumes:
+      - name: alertmanager-config
+        configMap:
+          name: alertmanager-config
+{{- end }}

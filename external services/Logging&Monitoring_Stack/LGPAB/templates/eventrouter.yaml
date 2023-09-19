@@ -1,0 +1,86 @@
+# Repurposed from GitHub manifests here: https://github.com/heptiolabs/eventrouter
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.eventrouter.serviceAccount }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: eventrouter
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eventrouter
+  labels:
+    app: eventrouter
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: eventrouter
+  labels:
+    app: eventrouter
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: eventrouter
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.eventrouter.serviceAccount }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventrouter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: eventrouter
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventrouter
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/eventrouter-cm.yaml") . | sha256sum }}
+      labels:
+        app: eventrouter
+    spec:
+      serviceAccount: {{ .Values.eventrouter.serviceAccount }}
+      priorityClassName: lpg
+      containers:
+      - name: eventrouter
+        image: {{ .Values.eventrouter.image }}
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: {{ .Values.eventrouter.resources.requests.memory }}
+            cpu: {{ .Values.eventrouter.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.eventrouter.resources.limits.memory }}
+            cpu: {{ .Values.eventrouter.resources.limits.cpu }}
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/eventrouter
+      volumes:
+      - name: config-volume
+        configMap:
+          name: eventrouter-cm

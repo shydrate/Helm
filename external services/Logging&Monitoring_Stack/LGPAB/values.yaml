@@ -1,0 +1,181 @@
+lpg:
+  storage:
+    type: gp2
+
+grafana:
+  image: grafana/grafana:8.1.5-ubuntu
+  storage:
+    size: 4Gi
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: "100m"
+    limits:
+      memory: 150Mi
+      cpu: "250m"
+  dns:
+    fqdn: dev.ap-south-1.metaecho.com
+    host: grafana
+    ttl: 300
+
+loki:
+  image: grafana/loki:2.4.1
+  resources:
+    requests:
+      memory: 500Mi
+      cpu: "500m"
+    limits:
+      memory: 1Gi
+      cpu: "1000m"
+  storage:
+    size: 10Gi
+  config:
+    retentionPeriod: "336h"
+
+promtail:
+  image: grafana/promtail:2.4.1
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: "250m"
+    limits:
+      memory: 256Mi
+      cpu: "500m"
+
+eventrouter:
+  image: gcr.io/heptio-images/eventrouter:v0.3
+  serviceAccount: eventrouter
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: "250m"
+    limits:
+      memory: 200Mi
+      cpu: "500m"
+  configJson: |
+    {
+      "sink": "glog"
+    }
+
+prometheus:
+  image: prom/prometheus:v2.30.1
+  serviceAccount: prometheus-sa
+  dns:
+    fqdn: dev.ap-south-1.metaecho.com
+    host: prometheus
+    ttl: 300
+  storage:
+    size: 10Gi
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: "500m"
+    limits:
+      memory: 2Gi
+      cpu: "1000m"
+  labels:
+    cluster: test
+    environment: test
+
+alertmanager:
+  image: prom/alertmanager:v0.23.0
+  alertsEnabled: false
+  runbookUrl: "https://github.com/echo-india/echo-auto/blob/master/docs/alerts.md"
+  dns:
+    fqdn: dev.ap-south-1.metaecho.com
+    host: alertmanager
+    ttl: 300
+  pagerduty:
+    key: "REPLACEME"
+  slackEchoABQ:
+    channel: ""
+    apiURL: ""
+  slackEchoIndia:
+    channel: ""
+    apiURL: ""
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "250m"
+    limits:
+      memory: "100Mi"
+      cpu: "500m"
+  config:
+    alertRules: |
+      groups:
+      - name: Alerting rules
+        rules:
+
+        - alert: EndpointDown
+          expr: probe_success == 0
+          for: 3m
+          labels:
+            severity: "critical"
+          annotations:
+            summary: "{{ $labels.instance }} appears to be down"
+            description: "Network endpoint has not responded; check the endpoint"
+
+blackbox:
+  enabled: false
+  image: prom/blackbox-exporter:v0.19.0
+  serviceName: blackbox
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "250m"
+    limits:
+      memory: "100Mi"
+      cpu: "500m"
+  config:
+    prometheus: |
+      - job_name: 'blackbox'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]  # Look for a HTTP 200 response.
+        static_configs:
+          - targets:
+            - http://prometheus.io    # Target to probe with http.
+            - https://prometheus.io   # Target to probe with https.
+            - http://example.com:8080 # Target to probe with http on port 8080.
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: {{ .Values.blackbox.serviceName }}:9115  # The blackbox exporter's real hostname:port.
+
+    blackbox: |
+      modules:
+        http_2xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+            valid_status_codes: []  # Defaults to 2xx
+            method: GET
+            headers:
+              Cache-Control: no-cache
+            preferred_ip_protocol: "ip4"
+        http_4xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2"]
+            valid_status_codes: [401, 404]
+            method: GET
+        tcp_connect:
+          prober: tcp
+          timeout: 10s
+
+ksm:
+  image: k8s.gcr.io/kube-state-metrics/kube-state-metrics:v2.3.0
+  serviceAccount: kube-state-metrics
+  port: 8080
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "250m"
+    limits:
+      memory: "100Mi"
+      cpu: "500m"

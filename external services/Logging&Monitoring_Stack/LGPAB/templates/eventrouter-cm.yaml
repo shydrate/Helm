@@ -1,0 +1,15 @@
+# Repurposed from GitHub manifests here: https://github.com/heptiolabs/eventrouter
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eventrouter-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: eventrouter
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+data:
+  config.json: |
+{{ .Values.eventrouter.configJson | indent 4 }}
