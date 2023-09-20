@@ -67,7 +67,7 @@ prometheus:
       memory: 2Gi
       cpu: "1000m"
   labels:
-    cluster: prod-iECHO-eks-cluster
+    cluster: kube-demo
     environment: prod
 
 alertmanager:
