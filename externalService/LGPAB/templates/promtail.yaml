@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Chart.Name }}-promtail
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Chart.Name }}-promtail
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources:
+    - nodes
+    - services
+    - pods
+    verbs:
+    - get
+    - watch
+    - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Chart.Name }}-promtail
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Chart.Name }}-promtail
+    namespace: default
+roleRef:
+    kind: ClusterRole
+    name: {{ .Chart.Name }}-promtail
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app: promtail
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      name: promtail
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/promtail-cm.yaml") . | sha256sum }}
+      labels:
+        name: promtail
+        app: promtail
+    spec:
+      serviceAccount: {{ .Chart.Name }}-promtail
+      serviceAccountName: {{ .Chart.Name }}-promtail
+      priorityClassName: lpg
+      containers:
+      - name: promtail
+        image: {{ .Values.promtail.image }}
+        args:
+        - -config.file=/etc/promtail/promtail.yaml
+        - -client.url=http://{{ .Chart.Name }}-loki:3100/loki/api/v1/push
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        ports:
+        - containerPort: 3101
+          name: http-metrics
+          protocol: TCP
+        resources:
+          requests:
+            memory: {{ .Values.promtail.resources.requests.memory }}
+            cpu: {{ .Values.promtail.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.promtail.resources.limits.memory }}
+            cpu: {{ .Values.promtail.resources.limits.cpu }}
+        readinessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /ready
+            port: http-metrics
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsGroup: 0
+          runAsUser: 0
+        volumeMounts:
+        - name: promtail-config
+          mountPath: /etc/promtail
+        - mountPath: /run/promtail
+          name: run
+        - mountPath: /var/lib/docker/containers
+          name: docker
+          readOnly: true
+        - mountPath: /var/log/pods
+          name: pods
+          readOnly: true
+        - mountPath: /var/log/journal
+          name: systemd-journal
+          readOnly: true
+      volumes:
+      - name: promtail-config
+        configMap:
+          name: promtail-config
+      - name: run
+        hostPath:
+          path: /run/promtail
+      - name: docker
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: pods
+        hostPath:
+          path: /var/log/pods
+      - name: systemd-journal
+        hostPath:
+          path: /var/log/journal

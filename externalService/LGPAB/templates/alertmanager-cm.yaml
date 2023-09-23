@@ -1,0 +1,75 @@
+{{- if .Values.alertmanager.alertsEnabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: {{ .Values.Namespace}}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace}}
+data:
+  slack-notification.tmpl: |
+    {{`{{ define "slack.title" -}}
+    {{ toUpper .Status }} {{ .GroupLabels.alertname }}
+    {{- end }}
+
+    {{ define "slack.text" -}}
+    {{- range .Alerts }}
+    Summary: {{ .Annotations.summary }}
+    Description: {{ .Annotations.description }}
+    Environment: {{ printf "\x60" }}{{ .Labels.environment }}{{ printf "\x60" }}
+    Cluster: {{ printf "\x60" }}{{ .Labels.cluster }}{{ printf "\x60" }}
+    {{- end }}
+    {{- end }}`}}
+
+  alertmanager.yaml: |
+    global:
+      resolve_timeout: 5m
+
+    templates:
+     - /etc/alertmanager/*.tmpl
+
+    route:
+      group_by: [alertname]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 30m
+      receiver: slack-demo
+      routes:
+      - matchers: [ '{severity=~"(info)"}']
+        continue: false
+        receiver: loki
+        group_interval: 15m
+        repeat_interval: 6h
+      - matchers: [ '{severity=~"(critical|warning)",route="slack-demo"}' ]
+        continue: false
+        receiver: 'slack-demo'
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 10m
+
+
+    receivers:
+    - name: 'slack-demo'
+      slack_configs:
+      - send_resolved: true
+        api_url: '{{ .Values.alertmanager.slackDemo.apiURL }}'
+        channel: '{{ .Values.alertmanager.slackDemo.channel }}'
+        title: {{`'{{ template "slack.title" . }}'`}}
+        text: {{`'{{ template "slack.text" . }}'`}}
+
+    - name: 'loki'
+      slack_configs:
+      - send_resolved: false
+        api_url: '{{ .Values.alertmanager.slackDemo.apiURL }}'
+        channel: '{{ .Values.alertmanager.slackDemo.channel }}'
+        title: {{`'{{ template "slack.title" . }}'`}}
+        text: {{`'{{ template "slack.text" . }}'`}}
+        color: '#17a2b8'
+
+    - name: 'pagerduty'
+      pagerduty_configs:
+      - service_key: "{{ .Values.alertmanager.pagerduty.key }}"
+{{- end }}
