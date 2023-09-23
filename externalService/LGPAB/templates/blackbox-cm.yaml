@@ -1,0 +1,14 @@
+{{- if .Values.blackbox.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-config
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+data:
+  blackbox.yaml: |
+{{ .Values.blackbox.config.blackbox | indent 4 }}
+{{- end }}

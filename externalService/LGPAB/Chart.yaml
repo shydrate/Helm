@@ -1,0 +1,5 @@
+apiVersion: v2
+name: lpg
+description: Helm charts to deploy Grafana, Loki, Promtail, and Prometheus stack
+type: application
+version: 1.4.5

@@ -1,0 +1,130 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+data:
+  loki.yaml: |
+    auth_enabled: false
+    chunk_store_config:
+      max_look_back_period: 0s
+    compactor:
+      shared_store: filesystem
+      working_directory: /data/loki/boltdb-shipper-compactor
+    ingester:
+      chunk_block_size: 262144
+      chunk_idle_period: 3m
+      chunk_retain_period: 1m
+      max_transfer_retries: 0
+      lifecycler:
+        ring:
+          kvstore:
+            store: inmemory
+          replication_factor: 1
+      wal:
+        enabled: true
+        dir: /data/loki/wal
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+    ruler:
+      evaluation_interval: 60s
+      poll_interval: 60s
+      alertmanager_url: http://alertmanager:9093
+      enable_alertmanager_v2: true
+      enable_api: true
+      rule_path: /tmp
+      remote_write:
+        enabled: true
+        client:
+          url: http://prometheus:9090/api/v1/write
+      ring:
+        kvstore:
+          store: inmemory
+      storage:
+        type: local
+        local:
+          directory: /etc/rules/fake
+      wal:
+        dir: /data/loki/ruler-wal
+    schema_config:
+      configs:
+      - from: "2020-10-24"
+        index:
+          period: 24h
+          prefix: index_
+        object_store: filesystem
+        schema: v11
+        store: boltdb-shipper
+    server:
+      http_listen_port: 3100
+      grpc_server_max_recv_msg_size: {{ .Values.loki.config.grpcServerMaxRecvMsgSize | int }}
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /data/loki/boltdb-shipper-active
+        cache_location: /data/loki/boltdb-shipper-cache
+        cache_ttl: 24h
+        shared_store: filesystem
+      filesystem:
+        directory: /data/loki/chunks
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: {{ .Values.loki.config.retentionPeriod }}
+  rules.yaml: |
+    groups:
+    - name: nodes
+      rules:
+        - alert: SystemOOM
+          expr: |
+            {app="eventrouter"} |~ "System OOM encountered, victim process: ([a-zA-Z\\-\\.]+), pid: ([0-9]+)" | regexp "System OOM encountered, victim process: (?P<cmd>[a-zA-Z\\-\\.]+), pid: (?P<pid>[0-9]+)"
+          for: 1m
+          labels:
+            severity: info
+            {{- range $k, $v := .Values.prometheus.labels }}
+            {{ $k }}: {{ $v }}
+            {{- end }}
+          annotations:
+            summary: "`{{ "{{" }} $labels.cmd {{ "}}" }}` was OOM killed"
+            description: "Container process was OOM killed"
+        - alert: Unhealthy
+          expr: |
+            {app="eventrouter"} |~ "\"reason\":" |= "Unhealthy" | regexp "\"name\":\"(?P<name>[0-9a-zA-Z\\-]+)\"" | regexp "\"message\":\"(?P<message>[a-zA-Z0-9:\\ ]+)\""
+          for: 1m
+          labels:
+            severity: info
+            {{- range $k, $v := .Values.prometheus.labels }}
+            {{ $k }}: {{ $v }}
+            {{- end }}
+          annotations:
+            summary: "`{{ "{{" }} $labels.name {{ "}}" }}` is `Unhealthy`, error: `{{ "{{" }} $labels.message {{ "}}" }}`"
+            description: "A pod/container is unhealthy"
+        - alert: NodeReady
+          expr: |
+            sum by (node) (count_over_time({app="eventrouter"} |~ "Node ([a-zA-Z0-9\\.\\-]+) status is now: NodeReady" |= "\"verb\":\"ADDED\"" | regexp "Node (?P<node>[a-zA-Z0-9\\.\\-]+) status is now: NodeReady" [5m]) > 0)
+          for: 1m
+          labels:
+            severity: info
+            {{- range $k, $v := .Values.prometheus.labels }}
+            {{ $k }}: {{ $v }}
+            {{- end }}
+          annotations:
+            summary: "`{{ "{{" }} $labels.node {{ "}}" }}` node is ready for workloads"
+            description: "A Kubernetes node has been added to the cluster"
+        - alert: NodeRemoved
+          expr: |
+            sum by (node) (count_over_time({app="eventrouter"} |~ "Deleting node ([a-zA-Z0-9\\.\\-]+) because it does not exist in the cloud provider" |= "\"verb\":\"ADDED\"" | regexp "Deleting node (?P<node>[a-zA-Z0-9\\.\\-]+) because it does not exist in the cloud provider" [5m]) > 0)
+          for: 1m
+          labels:
+            severity: info
+            {{- range $k, $v := .Values.prometheus.labels }}
+            {{ $k }}: {{ $v }}
+            {{- end }}
+          annotations:
+            summary: "`{{ "{{" }} $labels.node {{ "}}" }}` node has been removed"
+            description: "A Kubernetes node has been removed from the cluster"

@@ -1,0 +1,227 @@
+Namespace: default
+
+prometheus:
+  image: prom/prometheus:v2.30.1
+  serviceAccount: prometheus-sa
+  storage:
+    size: 10Gi
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: "500m"
+    limits:
+      memory: 2Gi
+      cpu: "1000m"
+  labels:
+    cluster: test
+    environment: test
+
+loki:
+  image: grafana/loki:2.4.1
+  resources:
+    requests:
+      memory: 500Mi
+      cpu: "500m"
+    limits:
+      memory: 1Gi
+      cpu: "1000m"
+  storage:
+    size: 10Gi
+  config:
+    retentionPeriod: "336h"
+
+
+grafana:
+  image: grafana/grafana:8.1.5-ubuntu
+  storage:
+    size: 4Gi
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: "100m"
+    limits:
+      memory: 150Mi
+      cpu: "250m"
+
+ksm:
+  image: k8s.gcr.io/kube-state-metrics/kube-state-metrics:v2.3.0
+  serviceAccount: kube-state-metrics
+  port: 8080
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "250m"
+    limits:
+      memory: "100Mi"
+      cpu: "500m"
+
+
+promtail:
+  image: grafana/promtail:2.4.1
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: "250m"
+    limits:
+      memory: 256Mi
+      cpu: "500m"
+
+
+blackbox:
+  enabled: true
+  image: prom/blackbox-exporter:v0.19.0
+  serviceName: blackbox
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "250m"
+    limits:
+      memory: "100Mi"
+      cpu: "500m"
+  config:
+    prometheus: |
+      - job_name: 'blackbox'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]  # Look for a HTTP 200 response.
+        static_configs:
+          - targets:
+            - http://prometheus.io    # Target to probe with http.
+            - https://prometheus.io   # Target to probe with https.
+            - http://example.com:8080 # Target to probe with http on port 8080.
+            - http://sample-demo.com
+            - https://shydrate.com
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: {{ .Values.blackbox.serviceName }}:9115  # The blackbox exporter's real hostname:port.
+
+    blackbox: |
+      modules:
+        http_2xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+            valid_status_codes: []  # Defaults to 2xx
+            method: GET
+            headers:
+              Cache-Control: no-cache
+            preferred_ip_protocol: "ip4"
+        http_4xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2"]
+            valid_status_codes: [401, 404]
+            method: GET
+        tcp_connect:
+          prober: tcp
+
+alertmanager:
+  image: prom/alertmanager:v0.23.0
+  alertsEnabled: true
+  pagerduty:
+    key: "REPLACEME"
+  slackDemo:
+    channel: "#loggingmonitoring" #Slack
+    apiURL: "https://hooks.slack.com/services/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" #slack webhook
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "250m"
+    limits:
+      memory: "100Mi"
+      cpu: "500m"
+  config:
+    alertRules: |
+      groups:
+      - name: Alerting rules
+        rules:
+
+        - alert: EndpointDown
+          expr: probe_success == 0
+          for: 2m
+          labels:
+            severity: "critical"
+          annotations:
+            summary: "`{{ $labels.instance }}` appears to be down"
+            description: "Network endpoint has not responded; check the endpoint"
+
+        - alert: KubernetesClusterMemoryUsageWarn
+          expr: (sum (container_memory_working_set_bytes{id="/"}) / sum (machine_memory_bytes) * 100) >= 80 and (sum (container_memory_working_set_bytes{id="/"}) / sum (machine_memory_bytes) * 100) < 90
+          for: 5m
+          labels:
+            severity: "warning"
+            route: slack-demo
+          annotations:
+            summary: "`{{ $labels.instance }}` memory usage is {{ $value }}%"
+            description: "Kubernetes cluster memory usage is over {{ $value }}%"
+
+        - alert: KubernetesClusterMemoryUsageCrit
+          expr: (sum (container_memory_working_set_bytes{id="/"}) / sum (machine_memory_bytes) * 100) >= 90
+          for: 5m
+          labels:
+            severity: "critical"
+            route: slack-demo
+          annotations:
+            summary: "`{{ $labels.instance }}` memory usage is over {{ $value }}%"
+            description: "Kubernetes cluster memory usage is over {{ $value }}%"
+
+        - alert: KubernetesClusterCPUUsageWarn
+          expr: (sum (rate (container_cpu_usage_seconds_total{id="/"}[1m])) / sum (machine_cpu_cores) * 100) >= 80 and (sum (rate (container_cpu_usage_seconds_total{id="/"}[1m])) / sum (machine_cpu_cores) * 100) < 90
+          for: 5m
+          labels:
+            severity: "warning"
+            route: slack-demo
+          annotations:
+            summary: "`{{ $labels.instance }}` CPU usage is {{ $value }}%"
+            description: "Kubernetes cluster CPU usage is {{ $value }}%"
+
+        - alert: KubernetesClusterCPUUsageCrit
+          expr: (sum (rate (container_cpu_usage_seconds_total{id="/"}[1m])) / sum (machine_cpu_cores) * 100) > 90
+          for: 5m
+          labels:
+            severity: "critical"
+            route: slack-demo
+          annotations:
+            summary: "`{{ $labels.instance }}` CPU usage is {{ $value }}%"
+            description: "Kubernetes cluster CPU usage is {{ $value }}%"
+
+        - alert: DiskUsageWarn
+          expr: (100 * (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes)) >= 80 and (100 * (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes)) < 90
+          for: 5m
+          labels:
+            severity: "warning"
+            route: slack-demo
+          annotations:
+            summary: "`{{ $labels.persistentvolumeclaim }}` usage is {{ $value | printf \"%.2f\" }}%"
+            description: "PVC needs to be expanded or data needs to be deleted"
+
+        - alert: DiskUsageCrit
+          expr: (100 * (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes)) >= 90
+          for: 5m
+          labels:
+            severity: "critical"
+            route: slack-demo
+          annotations:
+            summary: "`{{ $labels.persistentvolumeclaim }}` usage is {{ $value | printf \"%.2f\" }}%"
+            description: "PVC needs to be expanded or data needs to be deleted"
+
+eventrouter:
+  image: gcr.io/heptio-images/eventrouter:v0.3
+  serviceAccount: eventrouter
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: "250m"
+    limits:
+      memory: 200Mi
+      cpu: "500m"
+  configJson: |
+    {
+      "sink": "glog"
+    }

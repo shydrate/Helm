@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Chart.Name }}-loki
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Chart.Name }}-loki
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+rules:
+- apiGroups:
+  - extensions
+  resourceNames:
+  - loki
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Chart.Name }}-loki
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Chart.Name }}-loki
+subjects:
+- kind: ServiceAccount
+  name: {{ .Chart.Name }}-loki
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}-loki
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+spec:
+  ports:
+  - name: http-metrics
+    port: 3100
+    protocol: TCP
+    targetPort: http-metrics
+  selector:
+    app: loki
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: loki
+  namespace: {{ .Values.Namespace }}
+  labels:
+    app: loki
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    meta.helm.sh/release-namespace: {{ .Values.Namespace }}
+spec:
+  replicas: 1
+  serviceName: loki
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      serviceAccountName: {{ .Chart.Name }}-loki
+      priorityClassName: lpg
+#       initContainers:
+#       - image: {{ .Values.loki.image }}
+#         name: loki-init-container
+#         command: ["sh", "-c", "chown -R loki:loki /data"]
+#         volumeMounts:
+#         - name: loki-pvc
+#           mountPath: /data
+#         securityContext:
+#           runAsUser: 0
+      containers:
+      - name: loki
+        image: {{ .Values.loki.image }}
+        args:
+        - -config.file=/etc/loki/loki.yaml
+        ports:
+        - name: http-metrics
+          containerPort: 3100
+          protocol: TCP
+        resources:
+          requests:
+            memory: {{ .Values.loki.resources.requests.memory }}
+            cpu: {{ .Values.loki.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.loki.resources.limits.memory }}
+            cpu: {{ .Values.loki.resources.limits.cpu }}
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ready
+            port: http-metrics
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ready
+            port: http-metrics
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        volumeMounts:
+        - name: loki-config
+          mountPath: /etc/loki
+        - name: loki-pvc
+          mountPath: /data
+        - name: loki-rules
+          mountPath: /etc/rules/fake # fake is required in single tenant mode: https://grafana.com/docs/loki/latest/operations/multi-tenancy/
+      volumes:
+      - name: loki-config
+        configMap:
+          name: loki-config
+          items:
+          - key: loki.yaml
+            path: loki.yaml
+      - name: loki-rules
+        configMap:
+          name: loki-config
+          items:
+          - key: rules.yaml
+            path: rules.yaml
+  volumeClaimTemplates:
+  - metadata:
+      name: loki-pvc
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: {{ .Values.loki.storage.size }}
