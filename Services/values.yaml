@@ -7,7 +7,7 @@ replicaCount: 1
 
 # Application Name and namespace to deploy
 namespace: default
-appname: sampleApplication
+appname: sampleapplication
 
 # Docker Containers
 image:
@@ -63,7 +63,7 @@ autoscaling:
 
 # Health Checks for the service
 livenessProbe: 
-  enabled: true
+  enabled: false
   path: "" # add paths like /q/health/live or something similar.Else write api for liveness
   port : 8080
 
@@ -99,7 +99,7 @@ externalSecret:
   name: demo
 
 #SecretStore, note: You have to create this only once, and use externalsecrets for different secretmanagers.
-secretStrore:
+secretStore:
   enabled: false
   name: demo-secretstore
   aws:
@@ -110,7 +110,7 @@ secretStrore:
     secret_key: secret
 
 ingress:
-    enabled: true
+    enabled: flase
     # Ingress Annotations
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
